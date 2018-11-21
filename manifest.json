@@ -11,13 +11,14 @@
     },
     "permissions": ["webNavigation", "storage"],
     "background": {
-      "scripts": [ "background.js" ]
+      "scripts": [ "graph-js-sdk-web.js", "background.js" ]
     },
     "icons": {
       "32": "icons/icon-32.png"
     },
     "applications": {
       "gecko": {
+        "id": "{0bc0aa3a-4fc9-4342-86e1-9681bd066747}",
         "strict_min_version": "50.0"
       }
     }
