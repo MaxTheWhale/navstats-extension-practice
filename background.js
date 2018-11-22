@@ -1,52 +1,82 @@
 // Load existent stats with the storage API.
 
-var token = "needtofigureoutauthentication" // I have just been copy/pasting auth tokens during development, need to figure out how getting tokens works
-var client = MicrosoftGraph.Client.init({
-authProvider: (done) => {
-    done(null, token); //first parameter takes an error if you can't get an access token
+var client;
+
+function authorize() {
+  const redirectURL = browser.identity.getRedirectURL();
+  const clientID = "7f9f22a2-9c74-4840-8b86-bb815c78b56b";  
+  const scopes = ["Files.ReadWrite"];
+  let authURL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
+  authURL += `?client_id=${clientID}`;
+  authURL += `&response_type=token`;
+  authURL += `&redirect_uri=${encodeURIComponent(redirectURL)}`;
+  authURL += `&scope=${encodeURIComponent(scopes.join(' '))}`;
+
+  return browser.identity.launchWebAuthFlow({
+    interactive: true,
+    url: authURL
+  });
 }
-});
+
+function validate(redirectURL) {
+  var parsedUrl = new URL(redirectURL);
+  return parsedUrl.hash.split('&')[0].replace("#access_token=", "");
+}
+
+function getAccessToken() {
+  return authorize().then(validate);
+}
+
+
+
+
 
 // Tried to wrap getting the stats from OneDrive in a promise, so that it can be
 // used in the existing code unmodified.
 var getStats =
-  client
-    .api('/me/drive/root:/Mozilla/storage.json')
+  getAccessToken().then(tkn => {
+    client = MicrosoftGraph.Client.init({
+    authProvider: (done) => {
+      done(null, tkn);
+    }
+    });
+    return client.api('/me/drive/root:/Mozilla/storage.json')
     .get()
-      .then(fileInfo => {
-        return fetch(fileInfo["@microsoft.graph.downloadUrl"]);
-      })
-      .then(response => {
-        return response.json();
-      })
-      .then(jsonStats => {
-        return browser.storage.local.set(jsonStats)
-      })
-      .then(res => {
-        return browser.storage.local.get();
-      })
-      .catch(err => {
-        console.log(err);
-      });
+  })
+  .then(fileInfo => {
+    return fetch(fileInfo["@microsoft.graph.downloadUrl"]);
+  })
+  .then(response => {
+    return response.json();
+  })
+  .then(jsonStats => {
+    return browser.storage.local.set(jsonStats);
+  })
+  .then(res => {
+    return browser.storage.local.get();
+  })
+  .catch(err => {
+    // Should probably do proper error handling here
+    console.log(err);
+  });
 
 // At the moment this is called everytime a storage key is changed, and it
 // reuploads the entire storage json file. Need to figure out a better way.
 function uploadStats() {
   browser.storage.local.get()
-    .then(results => {
-      return client
-        .api('/me/drive/root:/Mozilla/storage.json:/content')
-        .put(results);
-    })
-    .catch(err => {
-      console.log(err);
-    });
+  .then(results => {
+    client
+      .api('/me/drive/root:/Mozilla/storage.json:/content')
+      .put(results);
+  })
+  .catch(err => {
+    console.log(err);
+  });
 }
 
 getStats.then(results => {
   // Initialize the saved stats if not yet initialized.
   if (!results.type) {
-    console.log("empty results");
     results = {
       host: {},
       type: {link: 0, reload: 0, typed: 0, generated: 0},
