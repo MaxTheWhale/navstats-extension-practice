@@ -1,35 +1,65 @@
 // Load existent stats with the storage API.
 
-var client;
+/* exported getAccessToken */
 
-function authorize() {
-  const redirectURL = browser.identity.getRedirectURL();
-  const clientID = "7f9f22a2-9c74-4840-8b86-bb815c78b56b";  
-  const scopes = ["Files.ReadWrite"];
-  let authURL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
-  authURL += `?client_id=${clientID}`;
-  authURL += `&response_type=token`;
-  authURL += `&redirect_uri=${encodeURIComponent(redirectURL)}`;
-  authURL += `&scope=${encodeURIComponent(scopes.join(' '))}`;
+const REDIRECT_URL = browser.identity.getRedirectURL();
+const CLIENT_ID = "7f9f22a2-9c74-4840-8b86-bb815c78b56b";
+const SCOPES = ["Files.ReadWrite"];
+const AUTH_URL =
+`https://login.microsoftonline.com/common/oauth2/v2.0/authorize\
+?client_id=${CLIENT_ID}\
+&response_type=token\
+&redirect_uri=${encodeURIComponent(REDIRECT_URL)}\
+&scope=${encodeURIComponent(SCOPES.join(' '))}`;
 
-  return browser.identity.launchWebAuthFlow({
-    interactive: true,
-    url: authURL
-  });
+function extractAccessToken(redirectUri) {
+  let m = redirectUri.match(/[#?](.*)/);
+  if (!m || m.length < 1)
+    return null;
+  let params = new URLSearchParams(m[1].split("#")[0]);
+  return params.get("access_token");
 }
 
 function validate(redirectURL) {
-  var parsedUrl = new URL(redirectURL);
-  return parsedUrl.hash.split('&')[0].replace("#access_token=", "");
+  const accessToken = extractAccessToken(redirectURL);
+  if (!accessToken) {
+    throw "Authorization failure";
+  }
+  const requestURL = "https://graph.microsoft.com/v1.0/me/drive/";
+  const requestHeaders = new Headers();
+  requestHeaders.append('Authorization', 'Bearer ' + accessToken);
+  const validationRequest = new Request(requestURL, {
+    method: "GET",
+    headers: requestHeaders
+  });
+
+  function checkResponse(response) {
+    return new Promise((resolve, reject) => {
+      if (response.status != 200) {
+        reject("Token validation error");
+      }
+      else resolve(accessToken);
+    });
+  }
+
+  return fetch(validationRequest).then(checkResponse);
+}
+
+/**
+Authenticate and authorize using browser.identity.launchWebAuthFlow().
+If successful, this resolves with a redirectURL string that contains
+an access token.
+*/
+function authorize() {
+  return browser.identity.launchWebAuthFlow({
+    interactive: true,
+    url: AUTH_URL
+  });
 }
 
 function getAccessToken() {
   return authorize().then(validate);
 }
-
-
-
-
 
 // Tried to wrap getting the stats from OneDrive in a promise, so that it can be
 // used in the existing code unmodified.
